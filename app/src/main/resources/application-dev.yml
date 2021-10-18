@@ -1,0 +1,33 @@
+micronaut:
+  application:
+    name: psp
+
+endpoints:
+  all:
+    enabled: none
+    sensitive: false
+
+vertx:
+  pg:
+    client:
+      port: 5432
+      host: psp-postgres
+      database: psp
+      user: postgres
+      password: 1212
+      maxSize: 5
+
+datasources:
+  default:
+    url: jdbc:postgresql://psp-postgres:5432/psp
+    driverClassName: org.postgresql.Driver
+    username: postgres
+    password: 1212
+    schema-generate: none
+    dialect: POSTGRES
+
+kafka:
+  health:
+    enabled: false
+  bootstrap:
+    servers: psp-kafka:9092

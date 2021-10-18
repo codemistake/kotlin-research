@@ -1,0 +1,6 @@
+applicationType: default
+defaultPackage: com.seyritey
+testFramework: junit
+sourceLanguage: kotlin
+buildTool: gradle
+features: [annotation-api, app-name, gradle, http-client, jdbc-hikari, junit, kafka, kotlin, kotlin-application, log4j2, management, netty-server, postgres, properties, readme, shade, testcontainers, vertx-pg-client]

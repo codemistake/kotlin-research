@@ -1,0 +1,26 @@
+micronaut:
+  application:
+    name: psp-test
+
+vertx:
+  pg:
+    client:
+      port: 54325
+      host: psp-postgres
+      database: testpsp
+      user: postgres
+      password: 1212
+      maxSize: 5
+
+datasources:
+  default:
+    url: jdbc:postgresql://psp-postgres:54325/testpsp
+    driverClassName: org.postgresql.Driver
+    username: postgres
+    password: 1212
+    schema-generate: none
+    dialect: POSTGRES
+
+kafka:
+  bootstrap:
+    servers: psp-kafka:9092

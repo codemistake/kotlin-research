@@ -1,0 +1,195 @@
+version: '3.8'
+services:
+  app:
+    build:
+      context: ./../
+      dockerfile: ./vm/app/Dockerfile
+    container_name: 'psp-app'
+    environment:
+      ENV_NAME: dev
+      LOGBACK_CONFIG_FILE: logback-dev.xml
+    ports:
+      - 8085:8080
+      - 9080:9080
+      - 5005:5005
+    restart: always
+    volumes:
+      - ./../build/libs:/app:delegated
+      - psp_log:/var/log
+    depends_on:
+      - liquibase
+      - kafka
+      - postgres
+      - mysql
+    networks:
+      - psp_network
+
+  postgres:
+    build:
+      context: ./
+      dockerfile: ./postgres/Dockerfile
+    container_name: 'psp-postgres'
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "psp"
+      POSTGRES_TEST_DB: "testpsp"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "1212"
+      PGDATA: /data/postgres
+    ports:
+      - 54325:5432
+    depends_on:
+      - mysql
+      - clickhouse
+    volumes:
+      - postgres_data:/data/postgres:delegated
+      - ./postgres/createTestDb.sh:/docker-entrypoint-initdb.d/createTestDb.sh:delegated
+      - ./postgres/postgresMysqlSetup.sql:/docker-entrypoint-initdb.d/postgresMysqlSetup.sql:delegated
+      - ./postgres/postgresClickhouseSetup.sql:/docker-entrypoint-initdb.d/postgresClickhouseSetup.sql:delegated
+    networks:
+      - psp_network
+
+  liquibase:
+    build:
+      context: ./../
+      dockerfile: ./vm/liquibase/Dockerfile
+    container_name: 'psp-liquibase'
+    depends_on:
+      - postgres
+      - clickhouse
+    volumes:
+      - ./../database/migrations:/liquibase/changelog:delegated
+      - ./liquibase/postgres.properties:/liquibase/postgres.properties:delegated
+      - ./liquibase/postgres-test.properties:/liquibase/postgres-test.properties:delegated
+      - ./liquibase/clickhouse.properties:/liquibase/clickhouse.properties:delegated
+    networks:
+      - psp_network
+
+  zookeeper:
+    image: bitnami/zookeeper:3.7.0
+    container_name: 'psp-zookeeper'
+    ports:
+      - '2181:2181'
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    volumes:
+      - zookeeper_data:/bitnami:delegated
+    networks:
+      - psp_network
+
+  kafka:
+    image: bitnami/kafka:2.8.0
+    container_name: 'psp-kafka'
+    ports:
+      - '9092:9092'
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=psp-zookeeper:2181
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://psp-kafka:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://psp-kafka:9092
+      - KAFKA_BROKER_ID=0
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+    volumes:
+      - kafka_data:/bitnami:delegated
+    networks:
+      - psp_network
+
+  clickhouse:
+    image: yandex/clickhouse-server:21.6.3
+    container_name: 'psp-clickhouse'
+    environment:
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: 1212
+    ports:
+      - 8123:8123
+    networks:
+      - psp_network
+
+  loki:
+    image: grafana/loki:2.2.1
+    container_name: 'psp-loki'
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - psp_loki
+
+  promtail:
+    image: grafana/promtail:2.2.1
+    container_name: 'psp-promtail'
+    volumes:
+      - ./promtail:/etc/promtail
+      - psp_log:/var/log:ro
+      - clickhouse_replicator_log:/var/clickhouseReplicatorLog:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - psp_loki
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: 'psp-grafana'
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana:delegated
+    networks:
+      - psp_loki
+
+  clickhouseReplicator:
+    image: registry.gitlab.seyritey.ru/psp/clickhouse-replicator:0.1
+    container_name: 'psp-clickhouse-replicator'
+    environment:
+      APP_PORT: 8086
+      KAFKA_HOST: psp-kafka
+      KAFKA_PORT: 9092
+      CLICKHOUSE_HOST: psp-clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: 1212
+    depends_on:
+      - kafka
+    volumes:
+      - clickhouse_replicator_log:/var/log
+    networks:
+      - psp_network
+
+  mysql:
+    container_name: 'psp-mysql'
+    image: mysql:5.7
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_DATABASE: dbh
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - 33066:3306
+    volumes:
+      - mysql_data:/var/lib/mysql:delegated
+      - ./mysql/dbh.sql:/docker-entrypoint-initdb.d/dbh.sql:delegated
+    networks:
+      - psp_network
+
+volumes:
+  psp_log:
+    driver: local
+  clickhouse_replicator_log:
+    driver: local
+  postgres_data:
+    driver: local
+  mysql_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  kafka_data:
+    driver: local
+  grafana_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+
+networks:
+  psp_network:
+    driver: bridge
+  psp_loki:
